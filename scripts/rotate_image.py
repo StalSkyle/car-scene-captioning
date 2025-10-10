@@ -5,8 +5,8 @@ from PIL import Image
 
 # 1. Настройки
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model_path = "resnet50_rotation_car_99.76.pth"
-image_path = "car.png"  # ПУТЬ К ИЗОБРАЖЕНИЮ
+model_path = "../models/resnet50_rotation_car_99.76.pth"
+image_path = "car.jpeg"  # ПУТЬ К ИЗОБРАЖЕНИЮ
 output_image_path = "rotated_car.png"  # ПУТЬ, КУДА СОХРАНИТЬ ГОТОВОЕ ИЗОБРАЖЕНИЕ
 
 # angles = {0: "0", 1: "90", 2: "180", 3: "270"}

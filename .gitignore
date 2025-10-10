@@ -1,0 +1,17 @@
+__pycache__/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# PyCharm
+.idea/
+*.iml
+
+# Environments
+.env
+.venv
+
+# Данные (изображения, датасеты и т.д.)
+*.jpg
+*.jpeg
+*.png
