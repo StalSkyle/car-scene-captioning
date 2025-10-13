@@ -131,20 +131,3 @@ def train_simple():
     return results
 
 train_results = train_simple()
-
-def train_simple():
-    # Обучаем
-    results = model.train(
-        data='cars_dataset.yaml',
-        epochs=30,          
-        imgsz=640,
-        batch=16,
-        lr0=0.001,
-        patience=10,         
-        save=True,
-        verbose=True
-    )
-    
-    return results
-
-train_results = train_simple()
