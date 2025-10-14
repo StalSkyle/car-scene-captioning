@@ -2,16 +2,32 @@ import torch
 import torch.nn as nn
 from torchvision import models, transforms
 
+
 class ImageProcessor:
-    def __init__(self, rotation_model, image):
-        self.rotation_model = rotation_model
-        self.image = image
+    def __init__(self):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.rotation_model = self.__init_rotate_model()
 
+    def __init_rotate_model(self):
+        """Инициализирует модель для поворота изображения."""
+        model_path = "MODELS/resnet50_rotation_car_99.76.pth"
+        num_classes = 4
 
-    def rotate_image(self) -> None:
+        rotation_model = models.resnet50(weights=None)
+        num_features = rotation_model.fc.in_features
+        rotation_model.fc = nn.Linear(num_features, num_classes)
+
+        rotation_model.load_state_dict(
+            torch.load(model_path, map_location=self.device)
+        )
+        rotation_model = rotation_model.to(self.device)
+        rotation_model.eval()
+
+        return rotation_model
+
+    def rotate_image(self, image):
         """Вращает изображение, используя предобученную модель."""
-        if self.image is None:
+        if image is None:
             print("Изображение не загружено. Сначала вызовите load_image().")
             return
 
@@ -24,13 +40,13 @@ class ImageProcessor:
                                  std=[0.229, 0.224, 0.225])
         ])
 
-        input_tensor = transform(self.image).unsqueeze(0).to(self.device)
+        input_tensor = transform(image).unsqueeze(0).to(self.device)
 
         with torch.no_grad():
             output = self.rotation_model(input_tensor)
             predicted_class = torch.argmax(output, dim=1).item()
 
         rotation_angle = angle_values[predicted_class]
-        rotated_image = self.image.rotate(-rotation_angle, expand=True)
+        rotated_image = image.rotate(-rotation_angle, expand=True)
 
-        self.image = rotated_image
+        return rotated_image
