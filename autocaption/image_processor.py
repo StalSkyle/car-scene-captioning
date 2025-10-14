@@ -3,9 +3,9 @@ import torch.nn as nn
 from torchvision import models, transforms
 
 class ImageProcessor:
-    def __init__(self):
-        self.rotation_model = None
-        self.image = None
+    def __init__(self, rotation_model, image):
+        self.rotation_model = rotation_model
+        self.image = image
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
 
