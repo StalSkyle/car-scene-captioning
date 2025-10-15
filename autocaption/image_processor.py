@@ -1,9 +1,10 @@
 import torch
 import torch.nn as nn
 from torchvision import models, transforms
+from ultralytics import YOLO
 
 
-class ImageProcessor:
+class ImageRotator:
     def __init__(self):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.rotation_model = self.__init_rotate_model()
@@ -28,8 +29,7 @@ class ImageProcessor:
     def rotate_image(self, image):
         """Вращает изображение, используя предобученную модель."""
         if image is None:
-            print("Изображение не загружено. Сначала вызовите load_image().")
-            return
+            raise "Изображение не загружено."
 
         angle_values = {0: 0, 1: 90, 2: 180, 3: 270}
 
@@ -50,3 +50,29 @@ class ImageProcessor:
         rotated_image = image.rotate(-rotation_angle, expand=True)
 
         return rotated_image
+
+class CarDetector:
+    def __init__(self):
+        self.car_detection_model = self.__init_car_detection_model()
+
+    @staticmethod
+    def __init_car_detection_model():
+        return YOLO('MODELS/car_detector.pt')
+
+    def detect_car(self, image):
+
+        result = self.car_detection_model(image)
+
+        if result[0].boxes is None:
+            return False
+
+        for box in result[0].boxes:
+            class_id = int(box.cls[0])
+            confidence = box.conf[0].item()
+
+            class_name = self.car_detection_model.names[class_id]
+
+            if class_name in ['car', 'truck'] and confidence > 0.25:
+                return True
+
+        return False

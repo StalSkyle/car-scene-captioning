@@ -1,4 +1,4 @@
-from autocaption import ImageLoader, ImageProcessor, ObjectExtractor, SceneExtractor
+from autocaption import ImageLoader, ImageRotator, CarDetector, ObjectExtractor, SceneExtractor
 
 
 def run_pipeline(image_path: list[str], source: bool) -> list:
@@ -12,7 +12,8 @@ def run_pipeline(image_path: list[str], source: bool) -> list:
 
     # инициализация классов
 
-    processor = ImageProcessor()
+    rotator = ImageRotator()
+    car_detector = CarDetector()
     object_extractor = ObjectExtractor()
     scene_classificator = SceneExtractor()
 
@@ -26,7 +27,10 @@ def run_pipeline(image_path: list[str], source: bool) -> list:
 
         # 1. Обработка изображения
 
-        image = processor.rotate_image(image)
+        image = rotator.rotate_image(image)
+        if not car_detector.detect_car(image):
+            res[i].append(f"Не удалось определить наличие автомобиля на изображении: {path}.")
+            continue
 
         # 2. Нахождение признаков
 
@@ -42,6 +46,9 @@ def run_pipeline(image_path: list[str], source: bool) -> list:
 if __name__ == "__main__":
     # тесты
     # print(run_pipeline(['../../parking.png'], source=True))
-    print(run_pipeline(
+    res = run_pipeline(
         ['https://carsharing-acceptances.s3.yandex.net/000080b5-5f40-4f6b-56bd-68e42cfe0f1d/car_location_22075860-8af6-11f0-b981-052fecb11955.CAP84636423206376342.jpg/46f3928-fad162a0-af3ae0d5-516d116e'],
-        source=False))
+        source=False)
+
+    for i in range(len(res[0])):
+        print(res[0][i])

@@ -15,9 +15,9 @@ class ObjectExtractor:
 
         return YOLO('MODELS/yolov8x-oiv7.pt')
 
-    def extract_features(self, image) -> list[str]:
+    def extract_features(self, image) -> dict[str, int]:
         results = self.object_detection_model(image, verbose=False)
-        res_obj_detection = []
+        res_obj_detection = dict()
         detected = []
         for r in results:
             for box in r.boxes:
@@ -27,7 +27,7 @@ class ObjectExtractor:
                 detected.append((label, confidence))
 
         for elem in detected:
-            res_obj_detection.append(elem)
+            res_obj_detection[elem[0]] = elem[1]
 
         return res_obj_detection
 
