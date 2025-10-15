@@ -38,17 +38,22 @@ def run_pipeline(image_path: list[str], source: bool) -> list:
         res[i].append(object_extractor.extract_features(image))
 
         # определение сцены
-        res[i].append(scene_classificator.predict_scene(image))
+
+        # убрал класс tunnel, так как там модель почти всегда выдает 1
+        temp_dict = scene_classificator.predict_scene(image)
+        temp_dict.popitem()
+
+        res[i].append(temp_dict)
 
     return res
 
 
 if __name__ == "__main__":
     # тесты
-    # print(run_pipeline(['../../parking.png'], source=True))
-    res = run_pipeline(
-        ['https://carsharing-acceptances.s3.yandex.net/000080b5-5f40-4f6b-56bd-68e42cfe0f1d/car_location_22075860-8af6-11f0-b981-052fecb11955.CAP84636423206376342.jpg/46f3928-fad162a0-af3ae0d5-516d116e'],
-        source=False)
+    res = run_pipeline(['../../highway_no_cars.png'], source=True)
+    # res = run_pipeline(
+    #     ['https://carsharing-acceptances.s3.yandex.net/000080b5-5f40-4f6b-56bd-68e42cfe0f1d/car_location_22075860-8af6-11f0-b981-052fecb11955.CAP84636423206376342.jpg/46f3928-fad162a0-af3ae0d5-516d116e'],
+    #     source=False)
 
     for i in range(len(res[0])):
         print(res[0][i])

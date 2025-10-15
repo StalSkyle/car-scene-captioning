@@ -61,7 +61,7 @@ class CarDetector:
 
     def detect_car(self, image):
 
-        result = self.car_detection_model(image)
+        result = self.car_detection_model(image, verbose=False)
 
         if result[0].boxes is None:
             return False
@@ -76,3 +76,25 @@ class CarDetector:
                 return True
 
         return False
+
+    # import cv2
+    # def detect_car(self, image):
+    #     result = self.car_detection_model(image, verbose=False)
+    #
+    #     found = False
+    #
+    #     if result[0].boxes is not None:
+    #         for box in result[0].boxes:
+    #             class_id = int(box.cls[0])
+    #             confidence = box.conf[0].item()
+    #             class_name = self.car_detection_model.names[class_id]
+    #
+    #             if class_name in ['car', 'truck'] and confidence > 0.25:
+    #                 found = True
+    #
+    #     # Отрисовка bounding box'ов
+    #     plotted_img = result[0].plot()
+    #     cv2.imshow("Result", plotted_img)
+    #     cv2.waitKey(0)
+    #     cv2.destroyAllWindows()
+    #     return found
