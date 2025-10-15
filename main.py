@@ -1,4 +1,4 @@
-from autocaption import ImageLoader, ImageRotator, CarDetector, ObjectExtractor, SceneExtractor
+from autocaption import ImageLoader, ImageRotator, CarDetector, ObjectExtractor, SceneExtractor, PhotoDescriber
 
 
 def run_pipeline(image_path: list[str], source: bool) -> list:
@@ -16,6 +16,7 @@ def run_pipeline(image_path: list[str], source: bool) -> list:
     car_detector = CarDetector()
     object_extractor = ObjectExtractor()
     scene_classificator = SceneExtractor()
+    describer = PhotoDescriber()
 
     # поехали
     for i, path in enumerate(image_path):
@@ -44,6 +45,13 @@ def run_pipeline(image_path: list[str], source: bool) -> list:
         temp_dict.popitem()
 
         res[i].append(temp_dict)
+
+        # генерация краткого описания
+        print('дошли до краткого описания')
+        result = describer.simple_photo_describe(image)
+        res[i].append(f"Базовое описание: {result['base']}")
+        res[i].append(f"Подробное описание: {result['detailed']}")
+        res[i].append(f"Альтернативное описание: {result['alternative']}")
 
     return res
 
