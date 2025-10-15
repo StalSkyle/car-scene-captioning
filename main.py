@@ -1,4 +1,5 @@
-from autocaption import ImageLoader, ImageRotator, CarDetector, ObjectExtractor, SceneExtractor, PhotoDescriber
+from autocaption import ImageLoader, ImageRotator, CarDetector, \
+    ObjectExtractor, SceneExtractor, PhotoDescriber
 
 
 def run_pipeline(image_path: list[str], source: bool) -> list:
@@ -11,7 +12,7 @@ def run_pipeline(image_path: list[str], source: bool) -> list:
     res = [[] * len(image_path)]
 
     # инициализация классов
-
+    print('Инициализация моделей, пожалуйста, подождите...')
     rotator = ImageRotator()
     car_detector = CarDetector()
     object_extractor = ObjectExtractor()
@@ -19,6 +20,7 @@ def run_pipeline(image_path: list[str], source: bool) -> list:
     describer = PhotoDescriber()
 
     # поехали
+    print('Начинается обработка изображений')
     for i, path in enumerate(image_path):
         image = ImageLoader(path=path, source=source).load_image()
 
@@ -30,7 +32,8 @@ def run_pipeline(image_path: list[str], source: bool) -> list:
 
         image = rotator.rotate_image(image)
         if not car_detector.detect_car(image):
-            res[i].append(f"Не удалось определить наличие автомобиля на изображении: {path}.")
+            res[i].append(
+                f"Не удалось определить наличие автомобиля на изображении: {path}.")
             continue
 
         # 2. Нахождение признаков
@@ -47,7 +50,6 @@ def run_pipeline(image_path: list[str], source: bool) -> list:
         res[i].append(temp_dict)
 
         # генерация краткого описания
-        print('дошли до краткого описания')
         result = describer.simple_photo_describe(image)
         res[i].append(f"Базовое описание: {result['base']}")
         res[i].append(f"Подробное описание: {result['detailed']}")
@@ -58,7 +60,9 @@ def run_pipeline(image_path: list[str], source: bool) -> list:
 
 if __name__ == "__main__":
     # тесты
-    res = run_pipeline(['../../highway_no_cars.png'], source=True)
+    res = run_pipeline(
+        ["/home/jupyter/project/Grisha/dataset_images/img_00000.jpeg"],
+        source=True)
     # res = run_pipeline(
     #     ['https://carsharing-acceptances.s3.yandex.net/000080b5-5f40-4f6b-56bd-68e42cfe0f1d/car_location_22075860-8af6-11f0-b981-052fecb11955.CAP84636423206376342.jpg/46f3928-fad162a0-af3ae0d5-516d116e'],
     #     source=False)

@@ -102,7 +102,6 @@ class PhotoDescriber:
         """
         Загружает и возвращает все необходимые модели и процессоры.
         """
-        print("🔄 Инициализация моделей...")
 
         # BLIP для генерации описаний
         blip_processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
@@ -119,7 +118,6 @@ class PhotoDescriber:
             "seg_model": seg_model,
         }
 
-        print("✅ Модели успешно инициализированы!")
         return models
 
     def remove_car_and_sky(self, image):
