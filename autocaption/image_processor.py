@@ -60,19 +60,18 @@ class CarDetector:
         return YOLO('MODELS/car_detector.pt')
 
     def detect_car(self, image):
+        results = self.car_detection_model(image, verbose=False)
+        result = results[0]
 
-        result = self.car_detection_model(image, verbose=False)
-
-        if result[0].boxes is None:
+        if result.boxes is None or len(result.boxes) == 0:
             return False
 
-        for box in result[0].boxes:
-            class_id = int(box.cls[0])
-            confidence = box.conf[0].item()
+        names = result.names
 
-            class_name = self.car_detection_model.names[class_id]
-
-            if class_name in ['car', 'truck'] and confidence > 0.25:
+        for box in result.boxes:
+            class_id = int(box.cls.item())
+            class_name = names[class_id].lower()
+            if class_name in ['car', 'truck']:
                 return True
 
         return False

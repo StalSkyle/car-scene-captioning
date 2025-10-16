@@ -4,9 +4,9 @@ from torchvision import models, transforms
 from PIL import Image
 from pathlib import Path
 from ultralytics import YOLO
-from tqdm import tqdm
+import matplotlib.pyplot as plt
 
-# подготовка модели, которая вращает картинку
+# Подготовка модели поворота
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model_path = "../MODELS/resnet50_rotation_car_99.76.pth"
 angle_values = {0: 0, 1: 90, 2: 180, 3: 270}
@@ -24,107 +24,61 @@ transform = transforms.Compose([
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 ])
 
-
-# функция, которая вращает картинку
 def rotate_image(image_path):
     image = Image.open(image_path).convert('RGB')
-
     input_tensor = transform(image).unsqueeze(0).to(device)
-
     with torch.no_grad():
         output = rotation_model(input_tensor)
         predicted_class = torch.argmax(output, dim=1).item()
-
     rotation_angle = angle_values[predicted_class]
     rotated_image = image.rotate(-rotation_angle, expand=True)
-
     return rotated_image
 
-
-# размечаем
+# Загрузка YOLO модели
 try:
-    yolo_model = YOLO('../MODELS/yolov8x-oiv7.pt')
-except:
-    raise 'скачайте модельку с jupyter lab, в гитхаб не помещается'
+    yolo_model = YOLO('MODELS/yolov8x-oiv7.pt')
+except Exception as e:
+    raise RuntimeError("Скачайте модельку с Jupyter Lab, в GitHub не помещается") from e
 
-image_dir = Path('../DATASETS/4K')
-class_image_count = {}
+# Поиск первой подходящей картинки
+image_dir = Path('../../good_images')
 image_extensions = {'jpg', 'jpeg', 'png', 'bmp'}
+image_path = None
 
-for img_path in tqdm(image_dir.iterdir()):
+for img_path in image_dir.iterdir():
+    if img_path.suffix.lower()[1:] in image_extensions:
+        image_path = img_path
+        break
 
-    if str(img_path).split('.')[-1] not in image_extensions:
-        continue
-    # получаем повёрнутое изображение
-    rotated_img = rotate_image(str(img_path))
+if image_path is None:
+    raise FileNotFoundError("Не найдено изображений с расширениями: jpg, jpeg, png, bmp в папке ../DATASETS/4K")
 
-    # прогоняем через YOLO
-    results = yolo_model(rotated_img,
-                         verbose=False)
-    result = results[0]
+print(f"Обрабатывается изображение: {image_path}")
 
-    # собираем уникальные классы на изображении
-    detected_classes = set()
-    for box in result.boxes:
-        cls_id = int(box.cls)
-        cls_name = result.names[cls_id]
-        detected_classes.add(cls_name)
-        conf = float(box.conf)
+# Поворот изображения
+rotated_img = rotate_image(str(image_path))
 
-    # обновляем статистику
-    for cls in detected_classes:
-        class_image_count[cls] = class_image_count.get(cls, 0) + 1
+# Применение YOLO
+results = yolo_model(rotated_img, verbose=False)
+result = results[0]
 
-# вывод
-print("=" * 50)
-print("Статистика по классам (сколько изображений содержат класс):")
-for cls, count in sorted(class_image_count.items(), key=lambda item: item[1])[
-    ::-1]:
-    print(f"{cls:<25}: {count}")
+# Визуализация результата
+annotated_img = result.plot()  # возвращает numpy array (BGR -> RGB для matplotlib)
+annotated_img_rgb = annotated_img[..., ::-1]  # конвертация BGR в RGB
 
-'''
-==================================================
-Статистика по классам (сколько изображений содержат класс):
-Car                      : 3879
-Wheel                    : 3074
-Tire                     : 1625
-Vehicle registration plate: 1597
-Van                      : 183
-Tree                     : 126
-Window                   : 80
-Street light             : 52
-Footwear                 : 41
-Person                   : 39
-Land vehicle             : 25
-Man                      : 23
-Plant                    : 22
-Truck                    : 20
-Building                 : 17
-Clothing                 : 16
-Woman                    : 16
-Jeans                    : 14
-Taxi                     : 10
-Bus                      : 6
-Traffic sign             : 5
-Bicycle                  : 4
-Bench                    : 4
-Billboard                : 3
-Girl                     : 2
-Flag                     : 2
-Waste container          : 2
-House                    : 1
-Airplane                 : 1
-Watch                    : 1
-Bicycle wheel            : 1
-Skyscraper               : 1
-Computer mouse           : 1
-Segway                   : 1
-Vehicle                  : 1
-Mirror                   : 1
-Shorts                   : 1
-Suitcase                 : 1
-Motorcycle               : 1
-Jacket                   : 1
-Human face               : 1
-Luggage and bags         : 1
-'''
+plt.figure(figsize=(12, 8))
+plt.imshow(annotated_img_rgb)
+plt.axis('off')
+plt.title(f"Результат YOLO на изображении: {image_path.name}")
+plt.show()
+
+# Вывод детектированных классов
+detected_classes = set()
+for box in result.boxes:
+    cls_id = int(box.cls)
+    cls_name = result.names[cls_id]
+    detected_classes.add(cls_name)
+
+print("\nДетектированные классы на изображении:")
+for cls in sorted(detected_classes):
+    print(f"- {cls}")

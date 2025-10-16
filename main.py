@@ -9,7 +9,7 @@ def run_pipeline(image_path: list[str], source: bool) -> list:
     :param source: источник картинки (True = локальный путь, False = URL)
     :return: текстовое описание окружения картинки
     """
-    res = [[] * len(image_path)]
+    res = [[] for _ in range(len(image_path))]
 
     # инициализация классов
     print('Инициализация моделей, пожалуйста, подождите...')
@@ -29,6 +29,7 @@ def run_pipeline(image_path: list[str], source: bool) -> list:
     # поехали
     print('Начинается обработка изображений')
     for i, path in enumerate(image_path):
+        print(f"Обрабатывается изображение №{i + 1}")
         image = ImageLoader(path=path, source=source).load_image()
 
         if image is None:
@@ -73,11 +74,18 @@ def run_pipeline(image_path: list[str], source: bool) -> list:
 if __name__ == "__main__":
     # тесты
     res = run_pipeline(
-        ["/home/jupyter/project/Grisha/dataset_images/img_00000.jpeg"],
+        ["/home/jupyter/project/Grisha/dataset_images/img_00000.jpeg",
+         "/home/jupyter/project/Grisha/dataset_images/img_00067.jpeg"
+         ],
         source=True)
     # res = run_pipeline(
     #     ['https://carsharing-acceptances.s3.yandex.net/000080b5-5f40-4f6b-56bd-68e42cfe0f1d/car_location_22075860-8af6-11f0-b981-052fecb11955.CAP84636423206376342.jpg/46f3928-fad162a0-af3ae0d5-516d116e'],
     #     source=False)
 
+    print('Результаты для первого изображения')
     for i in range(len(res[0])):
         print(res[0][i])
+
+    print('Результаты для второго изображения')
+    for i in range(len(res[1])):
+        print(res[1][i])
