@@ -1,5 +1,5 @@
 from autocaption import ImageLoader, ImageRotator, CarDetector, \
-    ObjectExtractor, SceneExtractor, PhotoDescriber
+    ObjectExtractor, SceneExtractor, PhotoDescriber, PhotoDescriberWithQuestion
 
 
 def run_pipeline(image_path: list[str], source: bool) -> list:
@@ -13,11 +13,18 @@ def run_pipeline(image_path: list[str], source: bool) -> list:
 
     # инициализация классов
     print('Инициализация моделей, пожалуйста, подождите...')
+    print('Инициализация модели поворота')
     rotator = ImageRotator()
+    print('Инициализация модели детектора автомобилей')
     car_detector = CarDetector()
+    print('Инициализация модели нахождения объектов')
     object_extractor = ObjectExtractor()
+    print('Инициализация модели классификации сцены')
     scene_classificator = SceneExtractor()
+    print('Инициализация модели BLIP')
     describer = PhotoDescriber()
+    print('Инициализация модели BLIP с вопросом в промте')
+    q_describer = PhotoDescriberWithQuestion()
 
     # поехали
     print('Начинается обработка изображений')
@@ -54,6 +61,11 @@ def run_pipeline(image_path: list[str], source: bool) -> list:
         res[i].append(f"Базовое описание: {result['base']}")
         res[i].append(f"Подробное описание: {result['detailed']}")
         res[i].append(f"Альтернативное описание: {result['alternative']}")
+
+        # Получаем дополнительно описание через BLIP VQA с конкретным вопросом
+
+        vqa_desc = q_describer.photo_describe(image)
+        res[i].append(f"Описание по вопросу (VQA): {vqa_desc}")
 
     return res
 
