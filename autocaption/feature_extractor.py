@@ -225,7 +225,7 @@ class PhotoDescriberWithQuestion:
         # устройство (cuda если есть)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         # директория BLIP (оставлена как абсолютная в духе оригинального фрагмента)
-        BLIP_DIR = "/home/jupyter/project/Grisha/BLIP"
+        BLIP_DIR = "MODELS/BLIP"
         self.BLIP_DIR = BLIP_DIR
 
         # инициализация модели BLIP VQA (внутри метода — клонирование и импорт если нужно)
