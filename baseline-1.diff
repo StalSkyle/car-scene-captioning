@@ -1,0 +1,526 @@
+diff --git a/README.md b/README.md
+index 2d6f005..102dc8b 100644
+--- a/README.md
++++ b/README.md
+@@ -69,9 +69,12 @@ from main import run_pipeline
+ results = run_pipeline(
+     image_path=[
+         "/path/to/image1.jpg",
+-        "https://example.com/car.jpg"
++        "/path/to/image2.jpg"
+     ],
+-    source=True  # True = локальный путь, False = URL
++    source=True,  # True = локальный путь, False = URL
++    car_confidence_threshold=0.25,
++    object_confidence_threshold=0.25,
++    scene_confidence_threshold=0.5,
+ )
+ 
+ for i, res in enumerate(results):
+@@ -80,6 +83,13 @@ for i, res in enumerate(results):
+         print(item)
+ ```
+ 
++Пороги необязательны: вызов `run_pipeline(image_path, source)` продолжает работать.
++Каждый порог задаётся числом от `0` до `1` включительно; результат с уверенностью,
++равной порогу, сохраняется. Некорректный тип, `NaN`, бесконечность и значения вне
++диапазона вызывают исключение до загрузки моделей. Порог для автомобиля определяет,
++продолжится ли обработка изображения; пороги объектов и сцены фильтруют словари
++результатов. Класс `tunnel` по-прежнему исключается из результата сцены.
++
+ ## Структура проекта
+ ```bash
+ car-scene-captioning/
+diff --git a/autocaption/feature_extractor.py b/autocaption/feature_extractor.py
+index 880960a..532d4be 100644
+--- a/autocaption/feature_extractor.py
++++ b/autocaption/feature_extractor.py
+@@ -10,6 +10,7 @@ import torch
+ from torchvision import models, transforms
+ from torchvision.transforms.functional import InterpolationMode
+ from ultralytics import YOLO
++from confidence import validate_confidence_threshold
+ 
+ 
+ class ObjectExtractor:
+@@ -23,19 +24,23 @@ class ObjectExtractor:
+ 
+         return YOLO('MODELS/yolov8x-oiv7.pt')
+ 
+-    def extract_features(self, image) -> dict[str, int]:
+-        results = self.object_detection_model(image, verbose=False)
++    def extract_features(self, image, confidence_threshold: float = 0.25) -> dict[str, float]:
++        confidence_threshold = validate_confidence_threshold(
++            confidence_threshold, "confidence_threshold"
++        )
++        results = self.object_detection_model(
++            image, verbose=False, conf=confidence_threshold
++        )
+         res_obj_detection = dict()
+-        detected = []
+         for r in results:
+             for box in r.boxes:
+                 cls_id = int(box.cls)
+                 label = r.names[cls_id]
+                 confidence = float(box.conf)
+-                detected.append((label, confidence))
+-
+-        for elem in detected:
+-            res_obj_detection[elem[0]] = elem[1]
++                if confidence >= confidence_threshold:
++                    res_obj_detection[label] = max(
++                        confidence, res_obj_detection.get(label, 0.0)
++                    )
+ 
+         return res_obj_detection
+ 
+@@ -69,7 +74,10 @@ class SceneExtractor:
+         model.eval()
+         return model
+ 
+-    def predict_scene(self, image):
++    def predict_scene(self, image, confidence_threshold: float = 0.5):
++        confidence_threshold = validate_confidence_threshold(
++            confidence_threshold, "confidence_threshold"
++        )
+         transform = transforms.Compose([
+             transforms.Resize((224, 224)),
+             transforms.ToTensor(),
+@@ -91,7 +99,8 @@ class SceneExtractor:
+             "gas stations",
+             "tunnel"
+         ]
+-        return {lbl: float(p) for lbl, p in zip(labels, probs)}
++        return {lbl: float(p) for lbl, p in zip(labels, probs)
++                if float(p) >= confidence_threshold}
+ 
+ 
+ class PhotoDescriber:
+diff --git a/autocaption/image_processor.py b/autocaption/image_processor.py
+index 04986ba..97d31e0 100644
+--- a/autocaption/image_processor.py
++++ b/autocaption/image_processor.py
+@@ -2,6 +2,7 @@ import torch
+ import torch.nn as nn
+ from torchvision import models, transforms
+ from ultralytics import YOLO
++from confidence import validate_confidence_threshold
+ 
+ 
+ class ImageRotator:
+@@ -59,8 +60,13 @@ class CarDetector:
+     def __init_car_detection_model():
+         return YOLO('MODELS/car_detector.pt')
+ 
+-    def detect_car(self, image):
+-        results = self.car_detection_model(image, verbose=False)
++    def detect_car(self, image, confidence_threshold: float = 0.25):
++        confidence_threshold = validate_confidence_threshold(
++            confidence_threshold, "confidence_threshold"
++        )
++        results = self.car_detection_model(
++            image, verbose=False, conf=confidence_threshold
++        )
+         result = results[0]
+ 
+         if result.boxes is None or len(result.boxes) == 0:
+@@ -71,7 +77,8 @@ class CarDetector:
+         for box in result.boxes:
+             class_id = int(box.cls.item())
+             class_name = names[class_id].lower()
+-            if class_name in ['car', 'truck']:
++            if (class_name in ['car', 'truck']
++                    and float(box.conf) >= confidence_threshold):
+                 return True
+ 
+         return False
+diff --git a/confidence.py b/confidence.py
+new file mode 100644
+index 0000000..52a3407
+--- /dev/null
++++ b/confidence.py
+@@ -0,0 +1,13 @@
++"""Shared validation for confidence thresholds used by the pipeline."""
++
++import math
++from numbers import Real
++
++
++def validate_confidence_threshold(value: Real, name: str) -> float:
++    """Return a finite threshold in [0, 1], rejecting booleans and other types."""
++    if isinstance(value, bool) or not isinstance(value, Real):
++        raise TypeError(f"{name} must be a number between 0 and 1")
++    if not math.isfinite(value) or not 0 <= value <= 1:
++        raise ValueError(f"{name} must be a finite number between 0 and 1")
++    return float(value)
+diff --git a/main.py b/main.py
+index 43518ec..d96f870 100644
+--- a/main.py
++++ b/main.py
+@@ -1,14 +1,30 @@
+ from autocaption import ImageLoader, ImageRotator, CarDetector, \
+     ObjectExtractor, SceneExtractor, PhotoDescriber, PhotoDescriberWithQuestion
++from confidence import validate_confidence_threshold
+ 
+ 
+-def run_pipeline(image_path: list[str], source: bool) -> list:
++def run_pipeline(image_path: list[str], source: bool,
++                 car_confidence_threshold: float = 0.25,
++                 object_confidence_threshold: float = 0.25,
++                 scene_confidence_threshold: float = 0.5) -> list:
+     """
+     Прогоняет картинку через модели с помощью написанной библиотеки autocaption
+     :param image_path: путь к изображению
+     :param source: источник картинки (True = локальный путь, False = URL)
++    :param car_confidence_threshold: минимальная уверенность детекции автомобиля
++    :param object_confidence_threshold: минимальная уверенность детекции объекта
++    :param scene_confidence_threshold: минимальная уверенность классификации сцены
+     :return: текстовое описание окружения картинки
+     """
++    car_confidence_threshold = validate_confidence_threshold(
++        car_confidence_threshold, "car_confidence_threshold"
++    )
++    object_confidence_threshold = validate_confidence_threshold(
++        object_confidence_threshold, "object_confidence_threshold"
++    )
++    scene_confidence_threshold = validate_confidence_threshold(
++        scene_confidence_threshold, "scene_confidence_threshold"
++    )
+     res = [[] for _ in range(len(image_path))]
+ 
+     # инициализация классов
+@@ -39,7 +55,7 @@ def run_pipeline(image_path: list[str], source: bool) -> list:
+         # 1. Обработка изображения
+ 
+         image = rotator.rotate_image(image)
+-        if not car_detector.detect_car(image):
++        if not car_detector.detect_car(image, confidence_threshold=car_confidence_threshold):
+             res[i].append(
+                 f"Не удалось определить наличие автомобиля на изображении: {path}.")
+             continue
+@@ -47,13 +63,17 @@ def run_pipeline(image_path: list[str], source: bool) -> list:
+         # 2. Нахождение признаков
+ 
+         # нахождение предметов на фотографии
+-        res[i].append(object_extractor.extract_features(image))
++        res[i].append(object_extractor.extract_features(
++            image, confidence_threshold=object_confidence_threshold
++        ))
+ 
+         # определение сцены
+ 
+         # убрал класс tunnel, так как там модель почти всегда выдает 1
+-        temp_dict = scene_classificator.predict_scene(image)
+-        temp_dict.popitem()
++        temp_dict = scene_classificator.predict_scene(
++            image, confidence_threshold=scene_confidence_threshold
++        )
++        temp_dict.pop("tunnel", None)
+ 
+         res[i].append(temp_dict)
+ 
+diff --git a/tests/conftest.py b/tests/conftest.py
+index 85d3e25..bf9b375 100644
+--- a/tests/conftest.py
++++ b/tests/conftest.py
+@@ -1,11 +1,13 @@
+ import importlib.util
+ import sys
++import types
+ from pathlib import Path
+ 
+ import pytest
+ 
+ 
+ PROJECT_ROOT = Path(__file__).resolve().parents[1]
++sys.path.insert(0, str(PROJECT_ROOT))
+ 
+ 
+ def load_source_module(module_name: str, relative_path: str):
+@@ -35,3 +37,26 @@ def image_processor_module():
+         "_image_processor_under_test",
+         "autocaption/image_processor.py",
+     )
++
++
++@pytest.fixture(scope="session")
++def feature_extractor_module():
++    # The tests exercise extraction and classification without loading BLIP.
++    transformers_stub = types.ModuleType("transformers")
++    for name in (
++        "BlipProcessor", "BlipForConditionalGeneration",
++        "Mask2FormerImageProcessor", "Mask2FormerForUniversalSegmentation",
++    ):
++        setattr(transformers_stub, name, object)
++    original = sys.modules.get("transformers")
++    sys.modules["transformers"] = transformers_stub
++    try:
++        return load_source_module(
++            "_feature_extractor_under_test",
++            "autocaption/feature_extractor.py",
++        )
++    finally:
++        if original is None:
++            del sys.modules["transformers"]
++        else:
++            sys.modules["transformers"] = original
+diff --git a/tests/test_feature_extractor.py b/tests/test_feature_extractor.py
+new file mode 100644
+index 0000000..4421a51
+--- /dev/null
++++ b/tests/test_feature_extractor.py
+@@ -0,0 +1,70 @@
++import math
++
++import pytest
++import torch
++from PIL import Image
++
++
++class FakeBox:
++    def __init__(self, class_id, confidence):
++        self.cls = class_id
++        self.conf = confidence
++
++
++class FakeResult:
++    def __init__(self, boxes):
++        self.boxes = boxes
++        self.names = {0: "tree", 1: "building"}
++
++
++class FakeModel:
++    def __init__(self, results):
++        self.results = results
++        self.calls = []
++
++    def __call__(self, image, verbose=False, conf=None):
++        self.calls.append((image, verbose, conf))
++        return self.results
++
++
++def test_object_extractor_filters_and_keeps_highest_confidence(feature_extractor_module):
++    extractor = feature_extractor_module.ObjectExtractor.__new__(
++        feature_extractor_module.ObjectExtractor
++    )
++    extractor.object_detection_model = FakeModel([
++        FakeResult([
++            FakeBox(0, 0.6), FakeBox(1, 0.59),
++            FakeBox(0, 0.8), FakeBox(0, 0.7),
++        ])
++    ])
++    image = object()
++
++    assert extractor.extract_features(image, confidence_threshold=0.6) == {"tree": 0.8}
++    assert extractor.object_detection_model.calls == [(image, False, 0.6)]
++
++
++def test_scene_extractor_filters_probabilities(feature_extractor_module):
++    extractor = feature_extractor_module.SceneExtractor.__new__(
++        feature_extractor_module.SceneExtractor
++    )
++    extractor.scene_classification_model = lambda image: torch.tensor([
++        [0.0, math.log(3), -math.log(3), 0.0, 0.0, 0.0, 0.0]
++    ])
++
++    result = extractor.predict_scene(
++        Image.new("RGB", (8, 8)), confidence_threshold=0.5
++    )
++
++    assert "residential" not in result
++    assert result["other"] == 0.5
++    assert result["highway"] > 0.7
++
++
++@pytest.mark.parametrize("method_name", ["extract_features", "predict_scene"])
++def test_extractors_reject_invalid_thresholds(feature_extractor_module, method_name):
++    cls = (feature_extractor_module.ObjectExtractor if method_name == "extract_features"
++           else feature_extractor_module.SceneExtractor)
++    extractor = cls.__new__(cls)
++
++    with pytest.raises(ValueError, match="confidence_threshold"):
++        getattr(extractor, method_name)(object(), confidence_threshold=-0.1)
+diff --git a/tests/test_image_processor.py b/tests/test_image_processor.py
+index ec9f935..79bf718 100644
+--- a/tests/test_image_processor.py
++++ b/tests/test_image_processor.py
+@@ -1,3 +1,6 @@
++import pytest
++
++
+ class FakeScalar:
+     def __init__(self, value):
+         self.value = value
+@@ -5,10 +8,14 @@ class FakeScalar:
+     def item(self):
+         return self.value
+ 
++    def __float__(self):
++        return float(self.value)
++
+ 
+ class FakeBox:
+-    def __init__(self, class_id):
++    def __init__(self, class_id, confidence=0.9):
+         self.cls = FakeScalar(class_id)
++        self.conf = FakeScalar(confidence)
+ 
+ 
+ class FakeResult:
+@@ -22,8 +29,8 @@ class FakeModel:
+         self.results = results
+         self.calls = []
+ 
+-    def __call__(self, image, verbose=False):
+-        self.calls.append((image, verbose))
++    def __call__(self, image, verbose=False, conf=None):
++        self.calls.append((image, verbose, conf))
+         return self.results
+ 
+ 
+@@ -42,7 +49,7 @@ def test_detect_car_returns_true_for_car(image_processor_module):
+     image = object()
+ 
+     assert detector.detect_car(image) is True
+-    assert detector.car_detection_model.calls == [(image, False)]
++    assert detector.car_detection_model.calls == [(image, False, 0.25)]
+ 
+ 
+ def test_detect_car_returns_true_for_truck(image_processor_module):
+@@ -70,3 +77,24 @@ def test_detect_car_returns_false_for_other_object(image_processor_module):
+     detector = make_detector(image_processor_module, [result])
+ 
+     assert detector.detect_car(object()) is False
++
++
++def test_detect_car_applies_confidence_threshold(image_processor_module):
++    result = FakeResult(
++        boxes=[FakeBox(0, 0.59), FakeBox(1, 0.6)],
++        names={0: "Car", 1: "Truck"},
++    )
++    detector = make_detector(image_processor_module, [result])
++
++    assert detector.detect_car(object(), confidence_threshold=0.6) is True
++    assert detector.detect_car(object(), confidence_threshold=0.61) is False
++    assert detector.car_detection_model.calls[0][2] == 0.6
++
++
++def test_detect_car_rejects_invalid_threshold(image_processor_module):
++    detector = make_detector(image_processor_module, [])
++
++    with pytest.raises(ValueError, match="confidence_threshold"):
++        detector.detect_car(object(), confidence_threshold=1.1)
++
++    assert detector.car_detection_model.calls == []
+diff --git a/tests/test_pipeline.py b/tests/test_pipeline.py
+index 36d74cf..18689ef 100644
+--- a/tests/test_pipeline.py
++++ b/tests/test_pipeline.py
+@@ -1,6 +1,8 @@
+ import sys
+ import types
+ 
++import pytest
++
+ from conftest import load_source_module
+ 
+ 
+@@ -19,6 +21,7 @@ def load_main_with_fakes(monkeypatch, *, loaded_image, has_car=True):
+         "predict_scene": 0,
+         "simple_photo_describe": 0,
+         "photo_describe": 0,
++        "thresholds": {},
+     }
+ 
+     class ImageLoader:
+@@ -42,24 +45,27 @@ def load_main_with_fakes(monkeypatch, *, loaded_image, has_car=True):
+         def __init__(self):
+             counters["CarDetector"] += 1
+ 
+-        def detect_car(self, image):
++        def detect_car(self, image, confidence_threshold=0.25):
+             counters["detect_car"] += 1
++            counters["thresholds"]["car"] = confidence_threshold
+             return has_car
+ 
+     class ObjectExtractor:
+         def __init__(self):
+             counters["ObjectExtractor"] += 1
+ 
+-        def extract_features(self, image):
++        def extract_features(self, image, confidence_threshold=0.25):
+             counters["extract_features"] += 1
++            counters["thresholds"]["object"] = confidence_threshold
+             return {"Tree": 2, "Building": 1}
+ 
+     class SceneExtractor:
+         def __init__(self):
+             counters["SceneExtractor"] += 1
+ 
+-        def predict_scene(self, image):
++        def predict_scene(self, image, confidence_threshold=0.5):
+             counters["predict_scene"] += 1
++            counters["thresholds"]["scene"] = confidence_threshold
+             # main.py removes the last item (comment says it is "tunnel").
+             return {"city street": 0.81, "tunnel": 1.0}
+ 
+@@ -123,6 +129,7 @@ def test_pipeline_success(monkeypatch):
+     assert counters["predict_scene"] == 1
+     assert counters["simple_photo_describe"] == 1
+     assert counters["photo_describe"] == 1
++    assert counters["thresholds"] == {"car": 0.25, "object": 0.25, "scene": 0.5}
+ 
+ 
+ def test_pipeline_skips_remaining_steps_when_image_cannot_be_loaded(monkeypatch):
+@@ -184,3 +191,51 @@ def test_heavy_components_are_initialized_once_for_multiple_images(monkeypatch):
+     assert counters["ImageLoader"] == 2
+     assert counters["rotate"] == 2
+     assert counters["detect_car"] == 2
++
++
++def test_pipeline_passes_custom_thresholds(monkeypatch):
++    main, counters = load_main_with_fakes(
++        monkeypatch, loaded_image=object(), has_car=True
++    )
++
++    main.run_pipeline(
++        ["car.jpg"], source=True,
++        car_confidence_threshold=0.7,
++        object_confidence_threshold=0.4,
++        scene_confidence_threshold=0.8,
++    )
++
++    assert counters["thresholds"] == {"car": 0.7, "object": 0.4, "scene": 0.8}
++
++
++@pytest.mark.parametrize("name,value,error", [
++    ("car_confidence_threshold", -0.1, ValueError),
++    ("object_confidence_threshold", 1.1, ValueError),
++    ("scene_confidence_threshold", float("nan"), ValueError),
++    ("car_confidence_threshold", float("inf"), ValueError),
++    ("object_confidence_threshold", True, TypeError),
++    ("scene_confidence_threshold", "0.5", TypeError),
++])
++def test_pipeline_rejects_invalid_thresholds_before_initializing_models(
++    monkeypatch, name, value, error
++):
++    main, counters = load_main_with_fakes(
++        monkeypatch, loaded_image=object(), has_car=True
++    )
++
++    with pytest.raises(error, match=name):
++        main.run_pipeline(["car.jpg"], source=True, **{name: value})
++
++    assert counters["ImageRotator"] == 0
++    assert counters["CarDetector"] == 0
++
++
++def test_pipeline_handles_no_scenes_after_filtering(monkeypatch):
++    main, _ = load_main_with_fakes(
++        monkeypatch, loaded_image=object(), has_car=True
++    )
++    main.SceneExtractor.predict_scene = lambda self, image, confidence_threshold: {}
++
++    result = main.run_pipeline(["car.jpg"], source=True)
++
++    assert result[0][1] == {}

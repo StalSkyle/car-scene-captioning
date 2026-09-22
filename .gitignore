@@ -15,3 +15,5 @@ __pycache__/
 *.jpg
 *.jpeg
 *.png
+
+.pytest_cache/
